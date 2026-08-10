@@ -6,6 +6,33 @@ const WARD_LEVEL_TYPES = new Set(["Phường", "Xã", "Thị trấn"]);
 const DISTRICT_LEVEL_TYPE = "Quận/Huyện";
 const ROAD_BUFFER_METERS = 10;
 
+// GeoJSON có coordinates rỗng vẫn là object hợp lệ trong JavaScript nhưng
+// Flutter không thể vẽ nó, vì vậy không được xem place này là đã match.
+function hasUsableGeometry(geometry) {
+    return !!(
+        geometry &&
+        Array.isArray(geometry.coordinates) &&
+        geometry.coordinates.length > 0
+    );
+}
+
+// Tên khu vực từ nguồn lịch điện không thống nhất: "KV Long Thạnh 2",
+// "Khu vực Long Thạnh 2" và "Long Thạnh 2" có thể cùng chỉ một nơi.
+function placeLookupKeys(name) {
+    const normalized = normalizeVnText(name)
+        .replace(/[;,]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+    if (!normalized) return [];
+
+    const withoutPartial = normalized.replace(/^mot phan\s+/, "").trim();
+    const withoutAreaPrefix = withoutPartial
+        .replace(/^(?:khu vuc|kv|phuong|xa|thi tran)\s+/, "")
+        .trim();
+
+    return [...new Set([normalized, withoutPartial, withoutAreaPrefix].filter(Boolean))];
+}
+
 // Trích ward ra khỏi parent_name dạng "Tân An, Cần Thơ" hoặc
 // "An Thới, Bình Thủy, Cần Thơ" -> lấy phần đầu tiên ("Tân An"/"An Thới").
 function extractWardFromParentName(parentName) {
@@ -41,7 +68,7 @@ exports.getOutagesByWard = async (req, res) => {
                  FROM road_segments`,
                 [ROAD_BUFFER_METERS]
             ),
-            pool.query(`SELECT normalized_name, ST_AsGeoJSON(geom) AS geojson FROM place_geometries`),
+            pool.query(`SELECT normalized_name, aliases, ST_AsGeoJSON(geom) AS geojson FROM place_geometries`),
             pool.query(
                 `SELECT id, name, normalized_name, type,
                         ST_AsGeoJSON(ST_Centroid(geom)) AS centroid_geojson
@@ -79,7 +106,25 @@ exports.getOutagesByWard = async (req, res) => {
             }
         }
 
-        const placeByNormName = new Map(placeRows.map((p) => [p.normalized_name, JSON.parse(p.geojson)]));
+        const placeByNormName = new Map();
+        for (const place of placeRows) {
+            const geometry = place.geojson ? JSON.parse(place.geojson) : null;
+
+            // Không đưa geometry rỗng vào index. Nếu không, object GeoJSON vẫn
+            // truthy và outage bị coi là đã match, trong khi Flutter không có
+            // polygon nào để vẽ và cũng không nhận được marker fallback.
+            if (!hasUsableGeometry(geometry)) continue;
+
+            const names = [place.normalized_name, ...(place.aliases || [])];
+            for (const name of names) {
+                for (const key of placeLookupKeys(name)) {
+                    // Ưu tiên bản ghi hợp lệ đầu tiên nếu alias bị trùng.
+                    if (!placeByNormName.has(key)) {
+                        placeByNormName.set(key, geometry);
+                    }
+                }
+            }
+        }
 
         const wardByNormName = new Map();
         const districtByNormName = new Map();
@@ -178,13 +223,19 @@ exports.getOutagesByWard = async (req, res) => {
 
             if (matchedAnyRoad) continue;
 
-            if (row.subarea_name) {
-                const geometry = placeByNormName.get(normalizeVnText(row.subarea_name));
+            // Một outage cấp xã/phường thường có subarea_name = null (ví dụ
+            // "Xã Trung Hưng"). Trong trường hợp đó vẫn thử ward_name để tận
+            // dụng polygon đã import trong place_geometries.
+            const placeName = row.subarea_name || row.ward_name;
+            if (placeName) {
+                const geometry = placeLookupKeys(placeName)
+                    .map((key) => placeByNormName.get(key))
+                    .find(hasUsableGeometry);
                 if (geometry) {
                     placeAreas.push({
                         geometry,
                         color: "yellow",
-                        label: row.subarea_name,
+                        label: placeName,
                         outage: outagePayload,
                     });
                     continue;

@@ -3636,5 +3636,39 @@
       "type": "MultiPolygon",
       "coordinates": []
     }
+  },
+  {
+    "name": "Xã Trung Hưng",
+    "normalized_name": "xa trung hung",
+    "aliases": [],
+    "type": "Xã",
+    "parent_adm": "Cờ Đỏ",
+    "geom": {
+      "type": "MultiPolygon",
+      "coordinates": [
+        [
+          [
+            105.4500000,
+            10.1500000
+          ],
+          [
+            105.4500000,
+            10.1800000
+          ],
+          [
+            105.4900000,
+            10.1800000
+          ],
+          [
+            105.4900000,
+            10.1500000
+          ],
+          [
+            105.4500000,
+            10.1500000
+          ]
+        ]
+      ]
+    }
   }
 ]

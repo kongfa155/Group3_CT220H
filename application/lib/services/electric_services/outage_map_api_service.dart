@@ -24,8 +24,13 @@ class OutageMapResult {
 }
 
 class OutageMapApiService {
-  static const String baseUrl =
-      'https://group22-ct220h.onrender.com/api/outages';
+  // Có thể trỏ bản debug vào backend local bằng:
+  // flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000/api/outages
+  // (Android emulator dùng 10.0.2.2 thay cho localhost).
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://group22-ct220h.onrender.com/api/outages',
+  );
   static const String _cacheDataKey = 'outage_map_latest_data';
   static const String _cacheUpdatedAtKey = 'outage_map_latest_updated_at';
 
@@ -51,7 +56,7 @@ class OutageMapApiService {
       //Lưu dữ liệu bằng thư viện sharePreferences để xài offline
       final preferences = await SharedPreferences.getInstance();
       await preferences.setString(_cacheDataKey, lightweightCache);
-      //Lưu dữ liệu theo dạng key : value vào file của máy 
+      //Lưu dữ liệu theo dạng key : value vào file của máy
       await preferences.setString(
         _cacheUpdatedAtKey,
         updatedAt.toIso8601String(),
