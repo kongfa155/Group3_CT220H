@@ -13,6 +13,7 @@ async function fetchAllSources() {
         if (fallbackFullText) {
             chunks.push({
                 source: "lichcupdien_org",
+                sourceUrl: sources.lichcupdien_org.url,
                 districtHint: null,
                 rawText: fallbackFullText,
                 coverage: sources.lichcupdien_org.coverage,
@@ -21,6 +22,7 @@ async function fetchAllSources() {
             for (const text of orgChunks) {
                 chunks.push({
                     source: "lichcupdien_org",
+                    sourceUrl: sources.lichcupdien_org.url,
                     districtHint: null,
                     rawText: text,
                     coverage: sources.lichcupdien_org.coverage,
@@ -38,6 +40,7 @@ async function fetchAllSources() {
             for (const article of articles) {
                 chunks.push({
                     source: "vietnambiz_com",
+                    sourceUrl: article.articleUrl,
                     districtHint: null,
                     rawText: article.text,
                     coverage: sources.vietnambiz_com.coverage,
@@ -53,6 +56,7 @@ async function fetchAllSources() {
         const { text } = await fetchXemlichcatdien();
         chunks.push({
             source: "xemlichcatdien_com",
+            sourceUrl: sources.xemlichcatdien_com.url,
             districtHint: null,
             rawText: text,
             coverage: sources.xemlichcatdien_com.coverage,

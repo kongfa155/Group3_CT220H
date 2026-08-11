@@ -9,6 +9,8 @@ class OutageDetailItem {
   final String? status;
   final String? startTime;
   final String? endTime;
+  final String? source;
+  final String? sourceUrl;
 
   OutageDetailItem({
     this.subareaName,
@@ -19,6 +21,8 @@ class OutageDetailItem {
     this.status,
     this.startTime,
     this.endTime,
+    this.source,
+    this.sourceUrl,
   });
 
   factory OutageDetailItem.fromJson(Map<String, dynamic> json) {
@@ -31,11 +35,14 @@ class OutageDetailItem {
       status: json['status'] as String?,
       startTime: json['startTime'] as String?,
       endTime: json['endTime'] as String?,
+      source: json['source'] as String?,
+      sourceUrl: json['sourceUrl'] as String?,
     );
   }
 
   String get timeRangeLabel {
-    String trim(String? t) => t != null && t.length >= 5 ? t.substring(0, 5) : (t ?? '?');
+    String trim(String? t) =>
+        t != null && t.length >= 5 ? t.substring(0, 5) : (t ?? '?');
     return '${trim(startTime)} - ${trim(endTime)}';
   }
 }
@@ -63,12 +70,14 @@ class OutagePointGroup {
       lat: (json['lat'] as num).toDouble(),
       lng: (json['lng'] as num).toDouble(),
       precision: json['precision']?.toString() ?? 'ward',
-      outages: outagesJson.map((o) => OutageDetailItem.fromJson(o as Map<String, dynamic>)).toList(),
+      outages: outagesJson
+          .map((o) => OutageDetailItem.fromJson(o as Map<String, dynamic>))
+          .toList(),
     );
   }
 }
 
-// Vùng tô màu (đường đã buffer hoặc khu vực/place_geometries)
+// Vùng tô màu của đường đã buffer.
 class OutageAreaFeature {
   final String label;
   final String color; // "yellow" | "orange"
@@ -109,6 +118,8 @@ class OutageAreaFeature {
   }
 
   static List<LatLng> _ringToLatLng(List ring) {
-    return ring.map((p) => LatLng((p[1] as num).toDouble(), (p[0] as num).toDouble())).toList();
+    return ring
+        .map((p) => LatLng((p[1] as num).toDouble(), (p[0] as num).toDouble()))
+        .toList();
   }
 }

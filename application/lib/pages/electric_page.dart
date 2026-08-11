@@ -38,7 +38,6 @@ class _ElectricPageState extends State<ElectricPage> {
   List<BoundaryFeature> _boundaries = [];
   List<OutagePointGroup> _wardSummaries = [];
   List<OutageAreaFeature> _roadAreas = [];
-  List<OutageAreaFeature> _placeAreas = [];
   List<OutagePointGroup> _fallbackPoints = [];
 
   // Trạng thái tải dữ liệu và thông tin dùng để phản hồi cho người dùng.
@@ -75,7 +74,6 @@ class _ElectricPageState extends State<ElectricPage> {
         _boundaries = boundaries;
         _wardSummaries = outageResult.wardSummaries;
         _roadAreas = outageResult.roadAreas;
-        _placeAreas = outageResult.placeAreas;
         _fallbackPoints = outageResult.points;
         _outageDate = outageResult.date;
         _lastUpdated = outageResult.lastUpdated;
@@ -177,7 +175,7 @@ class _ElectricPageState extends State<ElectricPage> {
   void _handleMapTap(LatLng point) {
     if (!_isDetailZoom) return;
 
-    for (final area in [..._roadAreas, ..._placeAreas]) {
+    for (final area in _roadAreas) {
       for (final ring in area.polygons) {
         if (_pointInPolygon(point, ring)) {
           _showOutageDetailsSingle(area.label, area.outage);
@@ -238,27 +236,27 @@ class _ElectricPageState extends State<ElectricPage> {
                       "https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
                 ),
 
-                // --- ZOOM XA: tô màu ranh giới phường ---
-                if (!_isDetailZoom)
-                  PolygonLayer(
-                    polygons: _boundaries.expand((feature) {
-                      final color = _colorForName(feature.name);
-                      return feature.polygons.map(
-                        (ring) => Polygon(
-                          points: ring,
-                          color: color.withOpacity(0.4),
-                          borderColor: color,
-                          borderStrokeWidth: 1.5,
-                          label: _currentZoom >= 11 ? feature.name : null,
-                        ),
-                      );
-                    }).toList(),
-                  ),
+                // Luôn giữ lớp phân vùng hành chính từ admin_boundaries.
+                // Khi zoom sâu, vùng đường được vẽ đè lên lớp này ở phía dưới.
+                PolygonLayer(
+                  polygons: _boundaries.expand((feature) {
+                    final color = _colorForName(feature.name);
+                    return feature.polygons.map(
+                      (ring) => Polygon(
+                        points: ring,
+                        color: color.withOpacity(0.4),
+                        borderColor: color,
+                        borderStrokeWidth: 1.5,
+                        label: _currentZoom >= 11 ? feature.name : null,
+                      ),
+                    );
+                  }).toList(),
+                ),
 
-                // --- ZOOM SÂU: tô vàng/cam đường + khu vực cụ thể ---
+                // --- ZOOM SÂU: tô vàng/cam các tuyến đường ---
                 if (_isDetailZoom)
                   PolygonLayer(
-                    polygons: [..._roadAreas, ..._placeAreas].expand((area) {
+                    polygons: _roadAreas.expand((area) {
                       final fillColor = area.color == 'yellow'
                           ? Colors.amber
                           : Colors.deepOrange;
@@ -322,7 +320,7 @@ class _ElectricPageState extends State<ElectricPage> {
                     }).toList(),
                   ),
 
-                // --- ZOOM SÂU: marker fallback cho outage chưa match road/place ---
+                // --- ZOOM SÂU: marker fallback cho outage chưa match đường ---
                 if (_isDetailZoom)
                   MarkerLayer(
                     markers: _fallbackPoints.map((group) {
@@ -566,7 +564,34 @@ class _OutageDetailTile extends StatelessWidget {
             style: const TextStyle(fontSize: 12, color: Colors.grey),
           ),
         ],
+        if (outage.source != null) ...[
+          const SizedBox(height: 4),
+          Text(
+            'Nguồn: ${_sourceLabel(outage.source!)}',
+            style: const TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ],
+        if (outage.sourceUrl != null && outage.sourceUrl!.isNotEmpty) ...[
+          const SizedBox(height: 2),
+          SelectableText(
+            outage.sourceUrl!,
+            style: const TextStyle(fontSize: 12, color: Colors.blue),
+          ),
+        ],
       ],
     );
+  }
+
+  static String _sourceLabel(String source) {
+    switch (source) {
+      case 'lichcupdien_org':
+        return 'Lịch Cúp Điện';
+      case 'vietnambiz_com':
+        return 'VietnamBiz';
+      case 'xemlichcatdien_com':
+        return 'Xem Lịch Cắt Điện';
+      default:
+        return source;
+    }
   }
 }

@@ -6,7 +6,6 @@ import '../../models/OutageItem.dart';
 class OutageMapResult {
   final List<OutagePointGroup> wardSummaries;
   final List<OutageAreaFeature> roadAreas;
-  final List<OutageAreaFeature> placeAreas;
   final List<OutagePointGroup> points;
   final String date;
   final DateTime lastUpdated;
@@ -15,7 +14,6 @@ class OutageMapResult {
   OutageMapResult({
     required this.wardSummaries,
     required this.roadAreas,
-    required this.placeAreas,
     required this.points,
     required this.date,
     required this.lastUpdated,
@@ -109,7 +107,6 @@ class OutageMapApiService {
     return OutageMapResult(
       wardSummaries: parseList('wardSummaries', OutagePointGroup.fromJson),
       roadAreas: parseList('roadAreas', OutageAreaFeature.fromJson),
-      placeAreas: parseList('placeAreas', OutageAreaFeature.fromJson),
       points: parseList('points', OutagePointGroup.fromJson),
       date: data['date']?.toString() ?? '',
       lastUpdated: lastUpdated,

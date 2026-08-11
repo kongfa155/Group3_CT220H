@@ -11,7 +11,7 @@ const { computeContentHash } = require("../utils/contentHash");
 //  Insert 1 record đã parse vào electric_outages_raw.
 //  Dùng ON CONFLICT DO NOTHING theo content_hash (xem sql/001_add_dedup_hash.sql) để 3 nguồn không tạo trùng lặp khi cùng đưa tin 1 outage giống hệt nhau, và để chạy job nhiều lần/ngày không bị nhân đôi dữ liệu.
 //  
-async function insertRecord(record, source) {
+async function insertRecord(record, source, sourceUrl) {
     const outageDate = toPostgresDate(record.date);
     const startTime = toPostgresTime(record.time_start);
     const endTime = toPostgresTime(record.time_end);
@@ -29,14 +29,15 @@ async function insertRecord(record, source) {
     await pool.query(
         `
                 INSERT INTO electric_outages_raw(
-                    source, power_company, area_text, reason, status,
+                    source, source_url, power_company, area_text, reason, status,
                     outage_date, start_time, end_time, content_hash, processed
                 )
-                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9, FALSE)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10, FALSE)
                 ON CONFLICT (content_hash) DO NOTHING
                 `,
         [
             source,
+            sourceUrl,
             record.power_company || null,
             record.area || null,
             record.reason || null,
@@ -66,7 +67,7 @@ async function run() {
             try {
                 const records = await extractRecords(chunk.rawText);
                 for (const record of records) {
-                    await insertRecord(record, chunk.source);
+                    await insertRecord(record, chunk.source, chunk.sourceUrl);
                     totalRecords++;
                 }
                 console.log(`[scrapeAllSources] ${chunk.source}: ${records.length} record`);

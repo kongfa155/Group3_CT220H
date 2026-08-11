@@ -6,33 +6,6 @@ const WARD_LEVEL_TYPES = new Set(["Phường", "Xã", "Thị trấn"]);
 const DISTRICT_LEVEL_TYPE = "Quận/Huyện";
 const ROAD_BUFFER_METERS = 10;
 
-// GeoJSON có coordinates rỗng vẫn là object hợp lệ trong JavaScript nhưng
-// Flutter không thể vẽ nó, vì vậy không được xem place này là đã match.
-function hasUsableGeometry(geometry) {
-    return !!(
-        geometry &&
-        Array.isArray(geometry.coordinates) &&
-        geometry.coordinates.length > 0
-    );
-}
-
-// Tên khu vực từ nguồn lịch điện không thống nhất: "KV Long Thạnh 2",
-// "Khu vực Long Thạnh 2" và "Long Thạnh 2" có thể cùng chỉ một nơi.
-function placeLookupKeys(name) {
-    const normalized = normalizeVnText(name)
-        .replace(/[;,]+/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-    if (!normalized) return [];
-
-    const withoutPartial = normalized.replace(/^mot phan\s+/, "").trim();
-    const withoutAreaPrefix = withoutPartial
-        .replace(/^(?:khu vuc|kv|phuong|xa|thi tran)\s+/, "")
-        .trim();
-
-    return [...new Set([normalized, withoutPartial, withoutAreaPrefix].filter(Boolean))];
-}
-
 // Trích ward ra khỏi parent_name dạng "Tân An, Cần Thơ" hoặc
 // "An Thới, Bình Thủy, Cần Thơ" -> lấy phần đầu tiên ("Tân An"/"An Thới").
 function extractWardFromParentName(parentName) {
@@ -49,6 +22,7 @@ exports.getOutagesByWard = async (req, res) => {
             SELECT
                 s.ward_name, s.subarea_name, s.road_name, s.extraction_result,
                 r.power_company, r.area_text, r.reason, r.status,
+                r.source, r.source_url,
                 r.outage_date, r.start_time, r.end_time
             FROM electric_outages_staging s
             JOIN electric_outages_raw r ON r.id = s.raw_id
@@ -57,7 +31,7 @@ exports.getOutagesByWard = async (req, res) => {
             [date]
         );
 
-        const [{ rows: roadRows }, { rows: placeRows }, { rows: boundaryRows }] = await Promise.all([
+        const [{ rows: roadRows }, { rows: boundaryRows }] = await Promise.all([
             // Buffer sẵn 10m mỗi bên NGAY TRONG QUERY - tính 1 lần cho mỗi
             // đường (không phải mỗi outage), đỡ tốn CPU lặp lại. Lấy thêm
             // parent_name để phân biệt các đường trùng tên khác phường
@@ -68,7 +42,6 @@ exports.getOutagesByWard = async (req, res) => {
                  FROM road_segments`,
                 [ROAD_BUFFER_METERS]
             ),
-            pool.query(`SELECT normalized_name, aliases, ST_AsGeoJSON(geom) AS geojson FROM place_geometries`),
             pool.query(
                 `SELECT id, name, normalized_name, type,
                         ST_AsGeoJSON(ST_Centroid(geom)) AS centroid_geojson
@@ -106,26 +79,6 @@ exports.getOutagesByWard = async (req, res) => {
             }
         }
 
-        const placeByNormName = new Map();
-        for (const place of placeRows) {
-            const geometry = place.geojson ? JSON.parse(place.geojson) : null;
-
-            // Không đưa geometry rỗng vào index. Nếu không, object GeoJSON vẫn
-            // truthy và outage bị coi là đã match, trong khi Flutter không có
-            // polygon nào để vẽ và cũng không nhận được marker fallback.
-            if (!hasUsableGeometry(geometry)) continue;
-
-            const names = [place.normalized_name, ...(place.aliases || [])];
-            for (const name of names) {
-                for (const key of placeLookupKeys(name)) {
-                    // Ưu tiên bản ghi hợp lệ đầu tiên nếu alias bị trùng.
-                    if (!placeByNormName.has(key)) {
-                        placeByNormName.set(key, geometry);
-                    }
-                }
-            }
-        }
-
         const wardByNormName = new Map();
         const districtByNormName = new Map();
         for (const b of boundaryRows) {
@@ -136,8 +89,7 @@ exports.getOutagesByWard = async (req, res) => {
         }
 
         const roadAreas = [];
-        const placeAreas = [];
-        const fallbackPoints = new Map(); // dùng khi zoom sâu nhưng không có road/place cụ thể
+        const fallbackPoints = new Map(); // dùng khi zoom sâu nhưng không có đường cụ thể
         const wardSummaries = new Map(); // dùng khi zoom xa - marker gộp cả phường
 
         for (const row of outageRows) {
@@ -150,6 +102,8 @@ exports.getOutagesByWard = async (req, res) => {
                 status: row.status,
                 startTime: row.start_time,
                 endTime: row.end_time,
+                source: row.source,
+                sourceUrl: row.source_url,
             };
 
             // --- Xác định phường/quận để GỘP VÀO wardSummaries -----------
@@ -223,26 +177,7 @@ exports.getOutagesByWard = async (req, res) => {
 
             if (matchedAnyRoad) continue;
 
-            // Một outage cấp xã/phường thường có subarea_name = null (ví dụ
-            // "Xã Trung Hưng"). Trong trường hợp đó vẫn thử ward_name để tận
-            // dụng polygon đã import trong place_geometries.
-            const placeName = row.subarea_name || row.ward_name;
-            if (placeName) {
-                const geometry = placeLookupKeys(placeName)
-                    .map((key) => placeByNormName.get(key))
-                    .find(hasUsableGeometry);
-                if (geometry) {
-                    placeAreas.push({
-                        geometry,
-                        color: "yellow",
-                        label: placeName,
-                        outage: outagePayload,
-                    });
-                    continue;
-                }
-            }
-
-            // --- Không match road/place cụ thể -> fallback điểm centroid -
+            // --- Không match đường cụ thể -> fallback điểm centroid admin_boundaries -
             if (boundary) {
                 const key = `point:${boundary.id}`;
                 if (!fallbackPoints.has(key)) {
@@ -261,7 +196,6 @@ exports.getOutagesByWard = async (req, res) => {
             date,
             wardSummaries: [...wardSummaries.values()], // dùng khi ZOOM XA
             roadAreas, // dùng khi ZOOM SÂU
-            placeAreas, // dùng khi ZOOM SÂU
             points: [...fallbackPoints.values()], // dùng khi ZOOM SÂU (fallback)
         });
     } catch (err) {
